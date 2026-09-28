@@ -11,3 +11,6 @@ __pycache__/
 
 /data
 
+# Local experiment/artifact outputs
+artifacts/
+metrics/

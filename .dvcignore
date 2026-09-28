@@ -11,8 +11,6 @@ __pycache__/
 # Byte-compiled / optimized / DLL files
 .DS_Store
 
-# original Data files
-/data/dadataset-original
 
 # source code
 /src
