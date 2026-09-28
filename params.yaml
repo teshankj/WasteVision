@@ -1,0 +1,11 @@
+seed: 42
+
+data:
+  raw_dir: data/dataset-original
+  processed_dir: data/processed
+  splits_dir: data/splits
+
+split:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15

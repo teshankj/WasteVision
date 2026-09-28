@@ -1,0 +1,22 @@
+stages:
+
+  prepare:
+    cmd: python3 -m wastevision.data.prepare
+    deps:
+      - data/dataset-original
+      - src/wastevision/data/prepare.py
+    outs:
+      - data/processed/manifest.csv
+
+  split:
+    cmd: python3 -m wastevision.data.split
+    deps:
+      - data/processed/manifest.csv
+      - src/wastevision/data/split.py
+    params:
+      - seed
+      - split
+    outs:
+      - data/splits/train.csv
+      - data/splits/val.csv
+      - data/splits/test.csv

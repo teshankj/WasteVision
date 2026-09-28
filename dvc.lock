@@ -1,0 +1,50 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python3 -m wastevision.data.prepare
+    deps:
+    - path: data/dataset-original
+      hash: md5
+      md5: e478c2aa5fb7cea1df7ff93559ed2cf8.dir
+      size: 3649458237
+      nfiles: 2527
+    - path: src/wastevision/data/prepare.py
+      hash: md5
+      md5: 96fc9bb7b544f78c4f79e78c8cf100bc
+      size: 4296
+    outs:
+    - path: data/processed/manifest.csv
+      hash: md5
+      md5: 0eefe47ace25b32d2b42fbe8943122cf
+      size: 130929
+  split:
+    cmd: python3 -m wastevision.data.split
+    deps:
+    - path: data/processed/manifest.csv
+      hash: md5
+      md5: 0eefe47ace25b32d2b42fbe8943122cf
+      size: 130929
+    - path: src/wastevision/data/split.py
+      hash: md5
+      md5: c6cd2b9716fdb8208fe59c35cb54804d
+      size: 4093
+    params:
+      params.yaml:
+        seed: 42
+        split:
+          train_ratio: 0.7
+          val_ratio: 0.15
+          test_ratio: 0.15
+    outs:
+    - path: data/splits/test.csv
+      hash: md5
+      md5: 1956a37504dcf22540c55f3e8e4ea09d
+      size: 19699
+    - path: data/splits/train.csv
+      hash: md5
+      md5: 415176f80e6c43e6891d340d4b6d71a7
+      size: 91621
+    - path: data/splits/val.csv
+      hash: md5
+      md5: ded3f7ddb0c83e546de3693194204a3e
+      size: 19661
