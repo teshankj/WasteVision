@@ -4,8 +4,26 @@ data:
   raw_dir: data/dataset-original
   processed_dir: data/processed
   splits_dir: data/splits
+  train_manifest: data/splits/train.csv
+  val_manifest: data/splits/val.csv
+  test_manifest: data/splits/test.csv
 
 split:
   train_ratio: 0.70
   val_ratio: 0.15
   test_ratio: 0.15
+
+model:
+  name: mobilenet_v3_small
+  pretrained: true
+  freeze_backbone: false
+  num_classes: 6
+  image_size: 224
+
+training:
+  batch_size: 32
+  epochs: 10
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 2
+  checkpoint_path: artifacts/baseline/best_model.pt
