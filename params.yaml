@@ -25,7 +25,12 @@ training:
   epochs: 10
   learning_rate: 0.001
   weight_decay: 0.0001
-  num_workers: 2
+  num_workers: 0
   augmentation: false
-  class_weighting: true
-  checkpoint_path: artifacts/class_weighted/best_model.pt
+  class_weighting: false
+  checkpoint_path: artifacts/mlflow_baseline/best_model.pt
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment_name: WasteVision
+  run_name: baseline

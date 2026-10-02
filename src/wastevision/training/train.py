@@ -8,6 +8,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+import mlflow
 import numpy as np
 import torch
 import yaml
@@ -16,12 +17,17 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from wastevision.data.dataset import (
-    CLASS_NAMES,
     WasteDataset,
     get_eval_transforms,
     get_train_transforms,
 )
 from wastevision.models.classifier import WasteClassifier
+from wastevision.tracking import (
+    configure_mlflow,
+    log_artifact,
+    log_metrics,
+    start_run,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -61,7 +67,11 @@ def load_config(config_path: str | Path) -> dict[str, Any]:
 
 def create_dataloaders(
     config: dict[str, Any],
-) -> tuple[DataLoader[tuple[Tensor, int]], DataLoader[tuple[Tensor, int]], WasteDataset]:
+) -> tuple[
+    DataLoader[tuple[Tensor, int]],
+    DataLoader[tuple[Tensor, int]],
+    WasteDataset,
+]:
     """Create training and validation dataloaders."""
     data_config = config["data"]
     training_config = config["training"]
@@ -193,18 +203,65 @@ def save_checkpoint(
     LOGGER.info("Saved best checkpoint: %s", checkpoint_path)
 
 
+def get_run_name(training_config: dict[str, Any]) -> str:
+    """Determine the MLflow run name from the training configuration."""
+    if training_config.get("class_weighting", False):
+        return "class_weighted"
+
+    if training_config.get("augmentation", False):
+        return "augmentation"
+
+    return "baseline"
+
+
+def get_mlflow_parameters(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the parameter dictionary for MLflow."""
+    model_config = config["model"]
+    training_config = config["training"]
+
+    return {
+        "model_name": model_config["name"],
+        "pretrained": model_config["pretrained"],
+        "freeze_backbone": model_config["freeze_backbone"],
+        "num_classes": model_config["num_classes"],
+        "image_size": model_config["image_size"],
+        "batch_size": training_config["batch_size"],
+        "epochs": training_config["epochs"],
+        "learning_rate": training_config["learning_rate"],
+        "weight_decay": training_config["weight_decay"],
+        "num_workers": training_config["num_workers"],
+        "augmentation": training_config.get("augmentation", False),
+        "class_weighting": training_config.get(
+            "class_weighting",
+            False,
+        ),
+        "seed": config["seed"],
+    }
+
+
 def train(
     config: dict[str, Any],
     device: torch.device,
 ) -> None:
     """Train the WasteVision classifier."""
+
+    LOGGER.info("Entering train()")
+    LOGGER.info("Config loaded successfully")
+    LOGGER.info("Requested device: %s", device)
+
     seed = int(config["seed"])
     set_seed(seed)
+
+    LOGGER.info("Seed configured: %d", seed)
 
     train_loader, val_loader, train_dataset = create_dataloaders(config)
 
     model_config = config["model"]
     training_config = config["training"]
+
+    LOGGER.info("Creating WasteClassifier...")
 
     model = WasteClassifier(
         num_classes=int(model_config["num_classes"]),
@@ -212,8 +269,12 @@ def train(
         freeze_backbone=bool(model_config["freeze_backbone"]),
     ).to(device)
 
+    LOGGER.info("WasteClassifier created successfully")
+
     num_classes = int(model_config["num_classes"])
-    class_weighting = bool(training_config.get("class_weighting", False))
+    class_weighting = bool(
+        training_config.get("class_weighting", False)
+    )
 
     if class_weighting:
         class_weights = calculate_class_weights(
@@ -246,63 +307,142 @@ def train(
     )
 
     LOGGER.info("Device: %s", device)
-    LOGGER.info("Training samples: %d", len(train_loader.dataset))
-    LOGGER.info("Validation samples: %d", len(val_loader.dataset))
-    LOGGER.info("Batch size: %d", int(training_config["batch_size"]))
-    LOGGER.info("Epochs: %d", int(training_config["epochs"]))
+    LOGGER.info(
+        "Training samples: %d",
+        len(train_loader.dataset),
+    )
+    LOGGER.info(
+        "Validation samples: %d",
+        len(val_loader.dataset),
+    )
+    LOGGER.info(
+        "Batch size: %d",
+        int(training_config["batch_size"]),
+    )
+    LOGGER.info(
+        "Epochs: %d",
+        int(training_config["epochs"]),
+    )
     LOGGER.info(
         "Learning rate: %s",
         training_config["learning_rate"],
     )
-    LOGGER.info("Augmentation: %s", training_config.get("augmentation", False))
-    LOGGER.info("Class weighting: %s", class_weighting)
+    LOGGER.info(
+        "Augmentation: %s",
+        training_config.get("augmentation", False),
+    )
+    LOGGER.info(
+        "Class weighting: %s",
+        class_weighting,
+    )
+
+    mlflow_config = config.get("mlflow", {})
+
+    configure_mlflow(
+        tracking_uri=mlflow_config.get(
+            "tracking_uri",
+            "sqlite:///mlflow.db",
+        ),
+        experiment_name=mlflow_config.get(
+            "experiment_name",
+             "WasteVision",
+        ),
+    )
+
+    run_name = mlflow_config.get("run_name") or get_run_name(training_config)
+
+    parameters = get_mlflow_parameters(config)
 
     best_validation_loss = float("inf")
 
-    for epoch in range(1, int(training_config["epochs"]) + 1):
-        train_loss, train_accuracy = run_epoch(
-            model=model,
-            loader=train_loader,
-            criterion=criterion,
-            device=device,
-            optimizer=optimizer,
+    with start_run(
+        run_name=run_name,
+        parameters=parameters,
+    ):
+        mlflow.log_param(
+            "training_samples",
+            len(train_loader.dataset),
+        )
+        mlflow.log_param(
+            "validation_samples",
+            len(val_loader.dataset),
+        )
+        mlflow.log_param(
+            "device",
+            str(device),
         )
 
-        validation_loss, validation_accuracy = run_epoch(
-            model=model,
-            loader=val_loader,
-            criterion=criterion,
-            device=device,
-        )
-
-        LOGGER.info(
-            "Epoch %d/%d | Train Loss: %.4f | Train Acc: %.4f | "
-            "Val Loss: %.4f | Val Acc: %.4f",
-            epoch,
-            int(training_config["epochs"]),
-            train_loss,
-            train_accuracy,
-            validation_loss,
-            validation_accuracy,
-        )
-
-        if validation_loss < best_validation_loss:
-            best_validation_loss = validation_loss
-
-            save_checkpoint(
+        for epoch in range(
+            1,
+            int(training_config["epochs"]) + 1,
+        ):
+            train_loss, train_accuracy = run_epoch(
                 model=model,
-                epoch=epoch,
-                validation_loss=validation_loss,
-                config=config,
-                checkpoint_path=Path(
-                    training_config["checkpoint_path"]
-                ),
+                loader=train_loader,
+                criterion=criterion,
+                device=device,
+                optimizer=optimizer,
             )
 
-    LOGGER.info(
-        "Training complete. Best validation loss: %.4f",
-        best_validation_loss,
-    )
+            validation_loss, validation_accuracy = run_epoch(
+                model=model,
+                loader=val_loader,
+                criterion=criterion,
+                device=device,
+            )
+
+            LOGGER.info(
+                "Epoch %d/%d | Train Loss: %.4f | "
+                "Train Acc: %.4f | Val Loss: %.4f | "
+                "Val Acc: %.4f",
+                epoch,
+                int(training_config["epochs"]),
+                train_loss,
+                train_accuracy,
+                validation_loss,
+                validation_accuracy,
+            )
+
+            log_metrics(
+                {
+                    "train_loss": train_loss,
+                    "train_accuracy": train_accuracy,
+                    "validation_loss": validation_loss,
+                    "validation_accuracy": validation_accuracy,
+                },
+                step=epoch,
+            )
+
+            if validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+
+                save_checkpoint(
+                    model=model,
+                    epoch=epoch,
+                    validation_loss=validation_loss,
+                    config=config,
+                    checkpoint_path=Path(
+                        training_config["checkpoint_path"]
+                    ),
+                )
+
+        log_metrics(
+            {
+                "best_validation_loss": best_validation_loss,
+            }
+        )
+
+        checkpoint_path = Path(
+            training_config["checkpoint_path"]
+        )
+
+        if checkpoint_path.exists():
+            log_artifact(checkpoint_path)
+
+        LOGGER.info(
+            "Training complete. Best validation loss: %.4f",
+            best_validation_loss,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -321,7 +461,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
+        default=(
+            "cuda"
+            if torch.cuda.is_available()
+            else "cpu"
+        ),
         help="Training device.",
     )
 
@@ -338,9 +482,14 @@ def main() -> None:
     device = torch.device(args.device)
 
     if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA was requested but is not available.")
+        raise RuntimeError(
+            "CUDA was requested but is not available."
+        )
 
-    train(config=config, device=device)
+    train(
+        config=config,
+        device=device,
+    )
 
 
 if __name__ == "__main__":

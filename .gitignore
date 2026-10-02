@@ -7,10 +7,18 @@ __pycache__/
 # Byte-compiled / optimized / DLL files
 .DS_Store
 .vscode/
-# Data files
 
+# Data files
 /data
+
+# DVC
+.dvc/cache/
+.dvc/tmp/
 
 # Local experiment/artifact outputs
 artifacts/
 metrics/
+
+# MLflow
+mlruns/
+mlflow.db

@@ -11,8 +11,4 @@ __pycache__/
 # Byte-compiled / optimized / DLL files
 .DS_Store
 .vscode/
-
-# source code
-/src
-
-.gitignore
+Thumbs.db
