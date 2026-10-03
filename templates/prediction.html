@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Prediction Result — WasteVision{% endblock %}
+
+{% block content %}
+
+<section class="result-card">
+
+    <p class="muted">
+        Prediction #{{ prediction.id }}
+    </p>
+
+    <h1>Prediction Result</h1>
+
+    <div class="prediction-class">
+        {{ prediction.predicted_class }}
+    </div>
+
+    <div class="result-grid">
+
+        <div>
+            <span>Confidence</span>
+            <strong>
+                {{ "%.2f"|format(prediction.confidence * 100) }}%
+            </strong>
+        </div>
+
+        <div>
+            <span>Model</span>
+            <strong>
+                {{ prediction.model_name }}
+            </strong>
+        </div>
+
+        <div>
+            <span>Version</span>
+            <strong>
+                {{ prediction.model_version }}
+            </strong>
+        </div>
+
+        <div>
+            <span>Inference Time</span>
+            <strong>
+                {{ "%.2f"|format(prediction.inference_time_ms) }} ms
+            </strong>
+        </div>
+
+    </div>
+
+    <div class="actions">
+        <a href="/dashboard" class="button">
+            Back to Dashboard
+        </a>
+    </div>
+
+</section>
+
+{% endblock %}

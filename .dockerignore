@@ -1,0 +1,61 @@
+# Git
+.git/
+.github/
+
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.so
+
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# DVC
+.dvc/cache/
+
+# Raw and processed datasets
+data/dataset-original/
+data/processed/
+data/splits/
+
+# ML experiment/tracking data
+mlruns/
+.mlflow/
+
+# Logs
+*.log
+logs/
+
+# Local development files
+.env
+.env.*
+!.env.example
+
+# Documentation/development-only files
+docs/
+
+# ARM64 Docker test Python cache
+docker/**/__pycache__/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Keep production model artifacts
+# artifacts/mlflow_baseline/best_model.pt is intentionally NOT ignored.

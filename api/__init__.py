@@ -1,0 +1,1 @@
+"""WasteVision FastAPI application package."""

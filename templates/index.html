@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}WasteVision — AI Waste Classification{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+    <h1>WasteVision</h1>
+
+    <p>
+        AI-powered waste image classification using
+        MobileNetV3-Small and PyTorch.
+    </p>
+
+    <div class="actions">
+        <a class="button" href="/login">Login</a>
+        <a class="button secondary" href="/register">Create Account</a>
+    </div>
+</section>
+
+<section class="features">
+
+    <article>
+        <h2>Computer Vision</h2>
+        <p>
+            Classifies waste images into six categories.
+        </p>
+    </article>
+
+    <article>
+        <h2>MLOps</h2>
+        <p>
+            Built with DVC, MLflow, PyTorch and reproducible workflows.
+        </p>
+    </article>
+
+    <article>
+        <h2>Production API</h2>
+        <p>
+            FastAPI-based inference with persistent prediction history.
+        </p>
+    </article>
+
+</section>
+
+{% endblock %}

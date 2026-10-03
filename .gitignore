@@ -22,3 +22,6 @@ metrics/
 # MLflow
 mlruns/
 mlflow.db
+
+
+MY.md

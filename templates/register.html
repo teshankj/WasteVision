@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Register — WasteVision{% endblock %}
+
+{% block content %}
+
+<section class="form-card">
+
+    <h1>Create Account</h1>
+
+    {% if error %}
+        <div class="error">
+            {{ error }}
+        </div>
+    {% endif %}
+
+    <form method="post" action="/register">
+
+        <label for="name">Name</label>
+
+        <input
+            id="name"
+            type="text"
+            name="name"
+            value="{{ name | default('') }}"
+            maxlength="100"
+            required
+        >
+
+        <label for="email">Email</label>
+
+        <input
+            id="email"
+            type="email"
+            name="email"
+            value="{{ email | default('') }}"
+            maxlength="255"
+            required
+        >
+
+        <label for="password">Password</label>
+
+        <input
+            id="password"
+            type="password"
+            name="password"
+            minlength="8"
+            maxlength="128"
+            required
+        >
+
+        <button type="submit" class="button">
+            Create Account
+        </button>
+
+    </form>
+
+    <p>
+        Already have an account?
+        <a href="/login">Login</a>
+    </p>
+
+</section>
+
+{% endblock %}

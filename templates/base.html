@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>
+        {% block title %}WasteVision{% endblock %}
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='css/style.css') }}"
+    >
+</head>
+
+<body>
+
+<header class="navbar">
+    <a class="brand" href="/">WasteVision</a>
+
+    <nav>
+
+        <a href="/">Home</a>
+
+        {% if user %}
+            <a href="/dashboard">Dashboard</a>
+
+            <form method="post" action="/logout" class="nav-form">
+                <button type="submit" class="nav-button">
+                    Logout
+                </button>
+            </form>
+        {% else %}
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+        {% endif %}
+
+    </nav>
+</header>
+
+<main class="container">
+    {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

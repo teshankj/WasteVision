@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — WasteVision{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-header">
+    <div>
+        <h1>WasteVision Dashboard</h1>
+
+        <p>
+            Welcome, <strong>{{ user.name }}</strong>
+        </p>
+
+        <p class="muted">
+            {{ user.email }}
+        </p>
+    </div>
+
+    <form method="post" action="/logout">
+        <button type="submit" class="button secondary">
+            Logout
+        </button>
+    </form>
+</div>
+
+<section class="stats-grid">
+
+    <article class="stat-card">
+        <span>Total Predictions</span>
+        <strong>{{ total_predictions }}</strong>
+    </article>
+
+    <article class="stat-card">
+        <span>Average Confidence</span>
+        <strong>
+            {{ "%.2f"|format(average_confidence * 100) }}%
+        </strong>
+    </article>
+
+    <article class="stat-card">
+        <span>Latest Prediction</span>
+
+        <strong>
+            {% if latest_prediction %}
+                {{ latest_prediction.predicted_class }}
+            {% else %}
+                —
+            {% endif %}
+        </strong>
+    </article>
+
+</section>
+
+
+<section class="dashboard-card">
+
+    <h2>Classify Waste</h2>
+
+    <p>
+        Upload a waste image to classify it using the
+        MobileNetV3-Small model.
+    </p>
+
+    {% if error %}
+        <div class="error">
+            {{ error }}
+        </div>
+    {% endif %}
+
+    <form
+        method="post"
+        action="/dashboard/predict"
+        enctype="multipart/form-data"
+        class="upload-form"
+    >
+
+        <label for="image">
+            Waste image
+        </label>
+
+        <input
+            id="image"
+            type="file"
+            name="image"
+            accept="image/*"
+            required
+        >
+
+        <button type="submit" class="button">
+            Classify Image
+        </button>
+
+    </form>
+
+</section>
+
+
+<section class="dashboard-card">
+
+    <h2>Prediction History</h2>
+
+    {% if predictions %}
+
+        <div class="table-wrapper">
+
+            <table>
+
+                <thead>
+                    <tr>
+                        <th>Class</th>
+                        <th>Confidence</th>
+                        <th>Model</th>
+                        <th>Inference</th>
+                        <th>Date</th>
+                        <th></th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for prediction in predictions %}
+
+                    <tr>
+
+                        <td>
+                            <strong>
+                                {{ prediction.predicted_class }}
+                            </strong>
+                        </td>
+
+                        <td>
+                            {{ "%.2f"|format(prediction.confidence * 100) }}%
+                        </td>
+
+                        <td>
+                            {{ prediction.model_name }}
+                            v{{ prediction.model_version }}
+                        </td>
+
+                        <td>
+                            {{ "%.2f"|format(prediction.inference_time_ms) }} ms
+                        </td>
+
+                        <td>
+                            {{ prediction.created_at }}
+                        </td>
+
+                        <td>
+                            <a
+                                href="/predictions/{{ prediction.id }}"
+                                class="small-link"
+                            >
+                                View
+                            </a>
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    {% else %}
+
+        <p class="muted">
+            No predictions yet. Upload an image to get started.
+        </p>
+
+    {% endif %}
+
+</section>
+
+{% endblock %}
