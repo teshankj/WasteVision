@@ -13,5 +13,5 @@ __pycache__/
 .vscode/
 Thumbs.db
 
-
+.env
 MY.md

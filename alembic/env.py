@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import os
+
+from config.settings import settings
 from logging.config import fileConfig
 
 from alembic import context
@@ -21,12 +22,8 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-database_url = os.environ.get("DATABASE_URL")
+database_url = settings.database_url
 
-if not database_url:
-    raise RuntimeError(
-        "DATABASE_URL environment variable is not set."
-    )
 
 config.set_main_option(
     "sqlalchemy.url",

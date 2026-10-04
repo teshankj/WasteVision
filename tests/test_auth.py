@@ -70,9 +70,16 @@ def test_invalid_jwt_is_rejected(
 def test_jwt_requires_secret_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """JWT creation should fail when the secret is missing."""
+    """JWT creation should fail when the configured secret is missing."""
 
-    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    from auth.jwt import create_access_token
+    from config.settings import settings
+
+    monkeypatch.setattr(
+        settings,
+        "jwt_secret_key",
+        "",
+    )
 
     with pytest.raises(
         RuntimeError,

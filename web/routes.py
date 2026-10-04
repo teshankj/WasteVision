@@ -2,17 +2,33 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, File, Request, UploadFile
+from io import BytesIO
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from api.dependencies import get_predictor
+from auth.email_verification import (
+    create_email_verification_token,
+    get_verification_token_hash,
+    is_verification_token_valid,
+)
 from auth.hashing import hash_password, verify_password
 from auth.jwt import create_access_token
-from database.models import User
+from database.models import PredictionRecord, User
 from database.session import get_db
+from services.email import email_service, get_verification_base_url
+from wastevision.inference.predictor import (
+    MODEL_NAME,
+    MODEL_VERSION,
+    WastePredictor,
+)
 from web.dependencies import (
     ACCESS_TOKEN_COOKIE,
     MAX_UPLOAD_SIZE_BYTES,
@@ -20,13 +36,6 @@ from web.dependencies import (
     get_current_web_user,
     get_optional_web_user,
 )
-
-from io import BytesIO
-from PIL import Image, UnidentifiedImageError
-
-from api.dependencies import get_predictor
-from database.models import PredictionRecord
-from wastevision.inference.predictor import MODEL_NAME, MODEL_VERSION, WastePredictor
 
 router = APIRouter(tags=["web"])
 
@@ -47,6 +56,7 @@ def index(
             "user": current_user,
         },
     )
+
 
 @router.get(
     "/login",
@@ -70,6 +80,7 @@ def login_page(
         name="login.html",
     )
 
+
 @router.post("/login", response_model=None)
 def login(
     request: Request,
@@ -78,6 +89,8 @@ def login(
     db: Session = Depends(get_db),
 ) -> RedirectResponse | HTMLResponse:
     """Authenticate a browser user."""
+
+    email = email.strip().lower()
 
     user = db.scalar(
         select(User).where(User.email == email)
@@ -97,6 +110,19 @@ def login(
             status_code=401,
         )
 
+    if not user.email_verified:
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={
+                "error": (
+                    "Please verify your email address before logging in."
+                ),
+                "email": email,
+            },
+            status_code=403,
+        )
+
     token = create_access_token(user.id)
 
     response = RedirectResponse(
@@ -109,7 +135,7 @@ def login(
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=WEB_COOKIE_SECURE,
         max_age=60 * 60,
     )
 
@@ -194,6 +220,18 @@ def register(
         password_hash=hash_password(password),
     )
 
+    verification_token = create_email_verification_token(user)
+
+    verification_url = (
+        f"{get_verification_base_url()}/verify-email?"
+        f"{urlencode({'token': verification_token})}"
+    )
+
+    email_service.send_verification_email(
+        recipient=user.email,
+        verification_url=verification_url,
+    )
+
     db.add(user)
 
     try:
@@ -214,23 +252,86 @@ def register(
 
     db.refresh(user)
 
-    token = create_access_token(user.id)
-
-    response = RedirectResponse(
-        url="/dashboard",
+    return RedirectResponse(
+        url="/registration-success",
         status_code=303,
     )
 
-    response.set_cookie(
-        key=ACCESS_TOKEN_COOKIE,
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=WEB_COOKIE_SECURE,
-        max_age=60 * 60,
+
+@router.get(
+    "/registration-success",
+    response_class=HTMLResponse,
+)
+def registration_success(
+    request: Request,
+) -> HTMLResponse:
+    """Show the email verification instruction page."""
+
+    return templates.TemplateResponse(
+        request=request,
+        name="registration_success.html",
     )
 
-    return response
+
+@router.get(
+    "/verify-email",
+    response_class=HTMLResponse,
+)
+def verify_email(
+    request: Request,
+    token: str,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Verify a browser user's email address."""
+
+    token_hash = get_verification_token_hash(token)
+
+    user = db.scalar(
+        select(User).where(
+            User.verification_token_hash == token_hash,
+        )
+    )
+
+    if user is None:
+        return templates.TemplateResponse(
+            request=request,
+            name="verification_result.html",
+            context={
+                "success": False,
+                "message": "Invalid or expired verification link.",
+            },
+            status_code=400,
+        )
+
+    if not is_verification_token_valid(
+        token,
+        user.verification_token_hash,
+        user.verification_token_expires_at,
+    ):
+        return templates.TemplateResponse(
+            request=request,
+            name="verification_result.html",
+            context={
+                "success": False,
+                "message": "Invalid or expired verification link.",
+            },
+            status_code=400,
+        )
+
+    user.email_verified = True
+    user.verification_token_hash = None
+    user.verification_token_expires_at = None
+
+    db.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="verification_result.html",
+        context={
+            "success": True,
+            "message": "Your email has been verified successfully.",
+        },
+    )
 
 
 @router.post("/logout")
@@ -247,6 +348,7 @@ def logout() -> RedirectResponse:
     )
 
     return response
+
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(
@@ -319,30 +421,14 @@ def dashboard_predict(
             context={
                 "user": current_user,
                 "predictions": [],
-                "error": "Image must be smaller than 5 MB.",
+                "error": "Uploaded image is too large.",
             },
             status_code=413,
         )
 
-    if not image_bytes:
-        return templates.TemplateResponse(
-            request=request,
-            name="dashboard.html",
-            context={
-                "user": current_user,
-                "predictions": [],
-                "error": "The uploaded image is empty.",
-            },
-            status_code=400,
-        )
-
     try:
-        uploaded_image = Image.open(BytesIO(image_bytes))
-
-        # Force PIL to actually decode the image.
-        uploaded_image.load()
-
-    except (UnidentifiedImageError, OSError):
+        image_object = Image.open(BytesIO(image_bytes)).convert("RGB")
+    except UnidentifiedImageError:
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
@@ -351,58 +437,57 @@ def dashboard_predict(
                 "predictions": [],
                 "error": "Uploaded file is not a valid image.",
             },
-            status_code=400,
+            status_code=415,
         )
 
-    try:
-        prediction, confidence, inference_time_ms = predictor.predict(
-            uploaded_image
-        )
-    finally:
-        uploaded_image.close()
+    predicted_class, confidence, inference_time_ms = predictor.predict(
+        image_object
+    )
 
-    prediction_record = PredictionRecord(
+    prediction = PredictionRecord(
         user_id=current_user.id,
-        predicted_class=prediction,
+        predicted_class=predicted_class,
         confidence=confidence,
         model_name=MODEL_NAME,
         model_version=MODEL_VERSION,
         inference_time_ms=inference_time_ms,
     )
 
-    db.add(prediction_record)
+    db.add(prediction)
     db.commit()
-    db.refresh(prediction_record)
+    db.refresh(prediction)
 
     return RedirectResponse(
-        url=f"/predictions/{prediction_record.id}",
+        url=f"/predictions/{prediction.id}",
         status_code=303,
     )
 
-@router.get("/predictions/{prediction_id}", response_class=HTMLResponse)
-def prediction_result(
+
+@router.get(
+    "/predictions/{prediction_id}",
+    response_class=HTMLResponse,
+)
+def prediction_detail(
     request: Request,
     prediction_id: int,
     current_user: User = Depends(get_current_web_user),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Display a prediction result belonging to the current user."""
+    """Render a single prediction result."""
 
-    statement = select(PredictionRecord).where(
-        PredictionRecord.id == prediction_id,
-        PredictionRecord.user_id == current_user.id,
+    prediction = db.scalar(
+        select(PredictionRecord).where(
+            PredictionRecord.id == prediction_id,
+            PredictionRecord.user_id == current_user.id,
+        )
     )
-
-    prediction = db.scalar(statement)
 
     if prediction is None:
         return templates.TemplateResponse(
             request=request,
-            name="dashboard.html",
+            name="404.html",
             context={
                 "user": current_user,
-                "predictions": [],
-                "error": "Prediction not found.",
             },
             status_code=404,
         )

@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime, timedelta, timezone
+
+from auth.email_verification import (
+    generate_verification_token,
+    hash_verification_token,
+)
+
+from database.models import User
 
 from fastapi.testclient import TestClient
 from PIL import Image
+
+from urllib.parse import parse_qs, urlparse
+
+from services.email import email_service
 
 
 TEST_EMAIL = "api-test@wastevision.example.com"
@@ -48,12 +60,33 @@ def register_user(
 
     return response.json()
 
+def verify_user_email(
+    client: TestClient,
+    email: str,
+) -> None:
+    """Verify a user's email using the captured development email."""
+
+    verification_email = email_service.get_verification_email(email)
+
+    assert verification_email is not None
+
+    parsed_url = urlparse(verification_email.verification_url)
+    token = parse_qs(parsed_url.query)["token"][0]
+
+    response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert response.status_code == 200
 
 def login_user(
     client: TestClient,
     email: str,
 ) -> str:
-    """Log in a test user and return the JWT."""
+    """Verify a test user's email and return the JWT."""
+
+    verify_user_email(client, email)
 
     response = client.post(
         "/api/v1/auth/login",
@@ -355,3 +388,248 @@ def test_prediction_user_isolation(
 
     assert history_response.status_code == 200
     assert history_response.json() == []
+
+
+def test_verify_email(
+    client: TestClient,
+    db_session,
+) -> None:
+    """A valid verification token should verify the user's email."""
+
+    email = "verify-api@wastevision.example.com"
+
+    register_user(
+        client,
+        "Verification User",
+        email,
+    )
+
+    user = db_session.query(User).filter_by(
+        email=email,
+    ).one()
+
+    token = generate_verification_token()
+
+    user.verification_token_hash = hash_verification_token(token)
+    user.verification_token_expires_at = (
+        datetime.now(timezone.utc) + timedelta(hours=24)
+    )
+
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Email address verified successfully.",
+    }
+
+    db_session.refresh(user)
+
+    assert user.email_verified is True
+    assert user.verification_token_hash is None
+    assert user.verification_token_expires_at is None
+
+
+def test_verify_email_token_is_single_use(
+    client: TestClient,
+    db_session,
+) -> None:
+    """A verification token should not work twice."""
+
+    email = "verify-single-use@wastevision.example.com"
+
+    register_user(
+        client,
+        "Single Use User",
+        email,
+    )
+
+    user = db_session.query(User).filter_by(
+        email=email,
+    ).one()
+
+    token = generate_verification_token()
+
+    user.verification_token_hash = hash_verification_token(token)
+    user.verification_token_expires_at = (
+        datetime.now(timezone.utc) + timedelta(hours=24)
+    )
+
+    db_session.commit()
+
+    first_response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert first_response.status_code == 200
+
+    second_response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert second_response.status_code == 400
+    assert second_response.json() == {
+        "detail": "Invalid or expired verification token.",
+    }
+
+
+def test_invalid_verification_token_is_rejected(
+    client: TestClient,
+    db_session,
+) -> None:
+    """An invalid verification token should return 400."""
+
+    email = "verify-invalid@wastevision.example.com"
+
+    register_user(
+        client,
+        "Invalid Token User",
+        email,
+    )
+
+    user = db_session.query(User).filter_by(
+        email=email,
+    ).one()
+
+    valid_token = generate_verification_token()
+
+    user.verification_token_hash = hash_verification_token(
+        valid_token,
+    )
+    user.verification_token_expires_at = (
+        datetime.now(timezone.utc) + timedelta(hours=24)
+    )
+
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/auth/verify-email",
+        params={
+            "token": generate_verification_token(),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Invalid or expired verification token.",
+    }
+
+
+def test_expired_verification_token_is_rejected(
+    client: TestClient,
+    db_session,
+) -> None:
+    """An expired verification token should return 400."""
+
+    email = "verify-expired@wastevision.example.com"
+
+    register_user(
+        client,
+        "Expired Token User",
+        email,
+    )
+
+    user = db_session.query(User).filter_by(
+        email=email,
+    ).one()
+
+    token = generate_verification_token()
+
+    user.verification_token_hash = hash_verification_token(token)
+    user.verification_token_expires_at = (
+        datetime.now(timezone.utc) - timedelta(minutes=1)
+    )
+
+    db_session.commit()
+
+    response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "Invalid or expired verification token.",
+    }
+
+def test_register_creates_unverified_user_and_sends_verification_email(client):
+    email_service.clear_last_verification_email()
+
+    email = "verification-test@wastevision.example.com"
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Verification Test",
+            "email": email,
+            "password": TEST_PASSWORD,
+        },
+    )
+
+    assert response.status_code == 201
+
+    sent_email = email_service.get_last_verification_email()
+
+    assert sent_email is not None
+    assert sent_email.recipient == email
+
+    parsed_url = urlparse(sent_email.verification_url)
+
+    assert parsed_url.path == "/api/v1/auth/verify-email"
+
+    token = parse_qs(parsed_url.query)["token"][0]
+    assert token
+
+    db_response = client.get(
+        "/api/v1/auth/verify-email",
+        params={"token": token},
+    )
+
+    assert db_response.status_code == 200
+    assert db_response.json()["message"] == (
+        "Email address verified successfully."
+    )
+
+def test_unverified_user_cannot_login(client):
+    email = "unverified-login@wastevision.example.com"
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Unverified User",
+            "email": email,
+            "password": TEST_PASSWORD,
+        },
+    )
+
+    assert response.status_code == 201
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": TEST_PASSWORD,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Email address must be verified before login."
+    )
+
+def test_readiness(client: TestClient) -> None:
+    """Readiness endpoint should report a ready service."""
+
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "service": "WasteVision",
+    }

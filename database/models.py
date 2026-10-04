@@ -40,6 +40,21 @@ class User(Base):
         nullable=False,
     )
 
+    email_verified: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+
+    verification_token_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    verification_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

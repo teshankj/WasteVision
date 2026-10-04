@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from config.settings import settings
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
@@ -15,10 +15,7 @@ ACCESS_TOKEN_COOKIE = "access_token"
 
 MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024
 
-WEB_COOKIE_SECURE = (
-    os.getenv("WEB_COOKIE_SECURE", "false").lower()
-    in {"1", "true", "yes", "on"}
-)
+WEB_COOKIE_SECURE = settings.web_cookie_secure
 
 
 def get_current_web_user(

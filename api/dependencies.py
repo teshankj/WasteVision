@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from auth.jwt import decode_access_token
+from config.settings import settings
 from database.models import User
 from database.session import get_db
 from wastevision.inference.predictor import WastePredictor
 
 
-APP_NAME = "WasteVision"
-APP_VERSION = "0.1.0"
-
-MODEL_PATH = Path("artifacts/mlflow_baseline/best_model.pt")
+APP_NAME = settings.app_name
+APP_VERSION = settings.app_version
+MODEL_PATH = settings.model_path
 
 logger = logging.getLogger(__name__)
 

@@ -21,10 +21,19 @@ from web import routes as web_routes
 
 from fastapi.staticfiles import StaticFiles
 
+from config.settings import settings
+
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    level=getattr(
+        logging,
+        settings.log_level.upper(),
+        logging.INFO,
+    ),
+    format=(
+        "%(asctime)s | %(levelname)s | "
+        "%(name)s | %(message)s"
+    ),
 )
 
 logger = logging.getLogger(__name__)

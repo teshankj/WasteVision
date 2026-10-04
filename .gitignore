@@ -23,5 +23,5 @@ metrics/
 mlruns/
 mlflow.db
 
-
+.env
 MY.md
